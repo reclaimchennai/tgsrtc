@@ -17,6 +17,7 @@ does not carry** — mostly district and intercity buses — plus what the buses
 | [`data/trip_observations.csv.gz`](data/trip_observations.csv.gz) | per collected service-day and stop: **planned, arrived and left** (IST), route, service type, depot, bus | 110,943 rows |
 | [`data/stats/`](data/stats/) | `punctuality_by_route.csv`, `punctuality_by_depot.csv` (median and 80th-percentile delay, % on time −2…+5 min, origin excluded), `coverage.csv` (trips, services, buses, routes, depots, stops logged per day) | |
 | `data/web/` | the live map's own network files (stops, services, road segments) | |
+| [`data/drivers/`](data/drivers/) | **driver working hours**: `driver_hours.csv.gz` per pseudonymous driver and day, `depot_hours.csv` per depot and day — see below | |
 | [`data/realtime/`](data/realtime/) | **GTFS-Realtime** samples: VehiclePositions and TripUpdates (`.pb`, and `.json.gz` to read) — see below | |
 | `data/stats.json` | the numbers on this page | |
 | `tools/` | how this repo is built (`build_tgsrtc.py`, `charts.py`, `readme.py`); the collectors are not published | |
@@ -47,6 +48,26 @@ How trips are matched: each bus's route number and service come from the TGSRTC 
 (`gtfs_rt.py index tgsrtc tgsrtc-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples are one snapshot.
 Live feeds, refreshed every 30 s, are being switched on at `https://maps.reclaim.city/tgsrtc/rt/vehicle_positions.pb`
 and `…/trip_updates.pb`.
+
+## Driver working hours
+
+How long TGSRTC drivers work, from the trips they drove (2026-11-11 onwards, 98 depot-days, 6,096 driver-days counted):
+**568** driver-days planned over 8 hours of driving, **276** over 10.
+
+- [`data/drivers/driver_hours.csv.gz`](data/drivers/driver_hours.csv.gz) — per driver and day: depot, routes, service type, trips, buses,
+  planned and observed first and last hour, span and driving hours, and `reliable`.
+- [`data/drivers/depot_hours.csv`](data/drivers/depot_hours.csv) — per depot and day: drivers, trips, median and 90th-percentile planned and
+  observed driving hours, drivers over 8 h and 10 h, and how many rows were left out or marked unreliable.
+
+**Privacy.** No names, phone numbers, staff or licence numbers are in this repository. Each driver is a pseudonym
+(`d-xxxx-xxxx-xxxx-xxxx`): a keyed hash (HMAC-SHA256) of an internal id that is itself a salted hash of the driver's name and
+mobile number; the key and salt are never published, so a pseudonym cannot be traced back to a person, and it stays the same
+from day to day. Times are rounded to the hour and hours to the quarter hour, so a row cannot be matched to a particular bus run.
+
+**Read with care.** Hours are lower bounds (a short trip between two reads of the tracking feed can be missed). `id_basis` says
+how sure the id is: `name+mobile` is one person; `name` may merge two drivers of the same name at a depot. Rows where an id was on
+two buses at once (two drivers sharing a name) and placeholder "names" (a depot, route or bus type typed in the name field) are left
+out. Days no one person works (a span over 16 h, or more than 3 buses) are kept but marked `reliable = 0`, and are not in the depot totals.
 
 ## Use it
 
