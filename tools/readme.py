@@ -151,9 +151,18 @@ route where known) and **TripUpdates** (arrival time and delay at each stop stil
 | TripUpdates | [`data/realtime/trip_updates.pb`](data/realtime/trip_updates.pb) (+ `.json.gz`) | {fmt(rt['trip_updates'])} trips |
 
 How trips are matched: {how}. The generator is [`tools/gtfs_rt.py`](tools/gtfs_rt.py)
-(`gtfs_rt.py index {net} {net}-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples are one snapshot.
-Live feeds, refreshed every 30 s, are being switched on at `https://maps.reclaim.city/{net}/rt/vehicle_positions.pb`
-and `…/trip_updates.pb`.
+(`gtfs_rt.py index {net} {net}-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples in `data/realtime/` are one snapshot.
+### Live feeds
+
+| Feed | URL |
+|---|---|
+| VehiclePositions | **https://maps.reclaim.city/{net}/rt/vehicle_positions.pb** (JSON: `…/vehicle_positions.json`) |
+| TripUpdates | **https://maps.reclaim.city/{net}/rt/trip_updates.pb** (JSON: `…/trip_updates.json`) |
+| Freshness | https://maps.reclaim.city/{net}/rt/status.json — `feed_time`, vehicles, matched trips |
+
+Regenerated within ~15 s of the live source changing (and only then); the header timestamp is the newest bus
+position in the feed. `Content-Type: application/x-protobuf`, `Cache-Control: max-age=10`, CORS open. If the source
+stops, the last good feed stays up and `feed_time` stops advancing. Documentation: https://api.reclaimchennai.city/docs/#buses
 
 """ if rt else '')
     dh = os.path.join(a.repo, 'data', 'drivers', 'depot_hours.csv')

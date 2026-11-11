@@ -45,9 +45,18 @@ route where known) and **TripUpdates** (arrival time and delay at each stop stil
 | TripUpdates | [`data/realtime/trip_updates.pb`](data/realtime/trip_updates.pb) (+ `.json.gz`) | 559 trips |
 
 How trips are matched: each bus's route number and service come from the TGSRTC tracking feed; collected district services are trip `tgc-<serviceId>`, and on official city routes the trip is the one whose timetable is nearest (within 3 min, and alone that near) to the bus's planned time at the same stop — otherwise the bus carries its `route_id` only; stop times ahead are our nowcast model's predicted arrivals. The generator is [`tools/gtfs_rt.py`](tools/gtfs_rt.py)
-(`gtfs_rt.py index tgsrtc tgsrtc-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples are one snapshot.
-Live feeds, refreshed every 30 s, are being switched on at `https://maps.reclaim.city/tgsrtc/rt/vehicle_positions.pb`
-and `…/trip_updates.pb`.
+(`gtfs_rt.py index tgsrtc tgsrtc-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples in `data/realtime/` are one snapshot.
+### Live feeds
+
+| Feed | URL |
+|---|---|
+| VehiclePositions | **https://maps.reclaim.city/tgsrtc/rt/vehicle_positions.pb** (JSON: `…/vehicle_positions.json`) |
+| TripUpdates | **https://maps.reclaim.city/tgsrtc/rt/trip_updates.pb** (JSON: `…/trip_updates.json`) |
+| Freshness | https://maps.reclaim.city/tgsrtc/rt/status.json — `feed_time`, vehicles, matched trips |
+
+Regenerated within ~15 s of the live source changing (and only then); the header timestamp is the newest bus
+position in the feed. `Content-Type: application/x-protobuf`, `Cache-Control: max-age=10`, CORS open. If the source
+stops, the last good feed stays up and `feed_time` stops advancing. Documentation: https://api.reclaimchennai.city/docs/#buses
 
 ## Driver working hours
 

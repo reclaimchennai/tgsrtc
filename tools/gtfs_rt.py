@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""GTFS-Realtime feeds for the RTC bus maps (APSRTC, TGSRTC), from the maps' own live data.
+"""GTFS-Realtime feeds for the bus maps (APSRTC, TGSRTC, Delhi), from the maps' own live data.
 
     gtfs_rt.py index apsrtc|tgsrtc GTFS_ZIP OUT.json   build the trip index (rt_index.json) from the published GTFS
-    gtfs_rt.py serve --net apsrtc|tgsrtc --live URL --data DIR --out DIR [--every 30]
+    gtfs_rt.py serve --net apsrtc|tgsrtc|delhi --live URL-or-DIR --data DIR --out DIR [--every 15]
+
+Each cycle checks the source and rewrites the feeds only when it has changed; the feed
+header's timestamp is the source's own time (when its newest positions were read).
 
 Every `--every` seconds, writes to OUT (served at maps.reclaim.city/<net>/rt/):
   vehicle_positions.pb   GTFS-RT FeedMessage: every live bus, its position, bearing, speed and,
@@ -19,6 +22,10 @@ The trip_ids are the ones in the published static GTFS (github.com/reclaimchenna
           whose timetable is nearest (within 3 min, and alone that near) to the bus's planned time
           (live/etas.json) at the same stop; otherwise the bus carries its route_id only. Stop times
           ahead: our nowcast model's predicted arrivals (live/etas.json).
+  Delhi   live/vehicles.json rows [registration, route code, lat, lon, bearing, fix, flags,
+          [stop index, seconds after the fix, ...]]: the route code is the Delhi GTFS route_id the map
+          uses (data/route_stops.json), and stop times ahead are the map's predicted arrivals at that
+          route's stops (stop_id = the GTFS stop_id).
 No driver data is read or written."""
 import argparse, csv, datetime as dt, gzip, io, json, math, os, re, sys, time, urllib.request, zipfile
 
@@ -79,15 +86,17 @@ def build_index(zp, out):
 
 # ── feeds ──
 def get(url):
+    if not url.startswith('http'):                       # a local file (the Delhi collector writes on this host)
+        return json.load(open(url))
     req = urllib.request.Request(url, headers={'User-Agent': 'reclaim.city-gtfs-rt/1 (+https://maps.reclaim.city)'})
     return json.loads(urllib.request.urlopen(req, timeout=15).read())
 
 
-def feed(pb, entities, now):
+def feed(pb, entities, now, src_t=None):
     m = pb.FeedMessage()
     m.header.gtfs_realtime_version = '2.0'
     m.header.incrementality = pb.FeedHeader.FULL_DATASET
-    m.header.timestamp = int(now)
+    m.header.timestamp = int(src_t or now)
     for e in entities:
         m.entity.append(e)
     return m
@@ -225,27 +234,74 @@ def tgsrtc_cycle(pb, a, S):
     return VP, TU, now
 
 
+def delhi_cycle(pb, a, S):
+    j = get(a.live.rstrip('/') + '/vehicles.json'); now = time.time()
+    rs = S['routes']
+    VP, TU = [], []
+    for v in j['v']:
+        reg, code, lat, lon, brg, fix, fl = v[:7]
+        eta = v[7] if len(v) > 7 else []
+        b = {'id': reg, 'veh': reg, 'lat': lat, 'lon': lon, 'brg': brg, 'spd': None, 't': fix}
+        st = rs.get(code)
+        VP.append(vehicle(pb, reg, b, None, code if st else None, None))
+        if not st or not eta:
+            continue
+        stus = []
+        if eta and isinstance(eta[0], list):                 # older files: [[i, etaEpoch], ...]
+            pairs = [(i, t) for i, t in eta]
+        else:
+            pairs = [(eta[k], fix + eta[k + 1]) for k in range(0, len(eta) - 1, 2)]
+        for i, t in pairs:
+            if 0 <= i < len(st) and t >= now - 60:
+                stus.append((i + 1, st[i], t, None))
+        if stus:
+            e = pb.FeedEntity(); e.id = 'tu-' + reg
+            u = e.trip_update; u.trip.route_id = code
+            u.vehicle.id = reg; u.vehicle.label = reg; u.timestamp = int(fix)
+            for q, sid, t, _ in stus:
+                x = u.stop_time_update.add(); x.stop_sequence = q; x.stop_id = sid; x.arrival.time = int(t)
+            TU.append(e)
+    return VP, TU, now
+
+
 def serve(a):
     from google.transit import gtfs_realtime_pb2 as pb
     os.makedirs(a.out, exist_ok=True)
     if a.net == 'apsrtc':
         S = json.load(open(os.path.join(a.data, 'rt_index.json')))
         cycle = apsrtc_cycle
+    elif a.net == 'delhi':
+        r = json.load(open(os.path.join(a.data, 'route_stops.json')))
+        S = {'routes': {code: [x[0] for x in v['d'][0]['s']] for code, v in r.items() if v.get('d')}}
+        cycle = delhi_cycle
     else:
         S = json.load(open(os.path.join(a.data, 'rt_index.json')))
         cycle = tgsrtc_cycle
+    src = a.live.rstrip('/') + '/vehicles.json'
+    last = None
     while True:
         t0 = time.time()
         try:
-            VP, TU, now = cycle(pb, a, S)
-            write(a.out, 'vehicle_positions', feed(pb, VP, now))
-            write(a.out, 'trip_updates', feed(pb, TU, now))
-            json.dump({'t': int(now), 'vehicles': len(VP), 'on_trip': sum(1 for e in VP if e.vehicle.trip.trip_id), 'trip_updates': len(TU)},
-                      open(os.path.join(a.out, 'status.json'), 'w'))
-            print(time.strftime('%H:%M:%S'), a.net, len(VP), 'vehicles', len(TU), 'trip updates', flush=True)
+            # cheap change check first: the source's own timestamp (or the file's mtime)
+            stamp = os.path.getmtime(src) if not src.startswith('http') else None
+            if stamp is None or stamp != last:
+                VP, TU, now = cycle(pb, a, S)
+                # the newest fix, never ahead of now (one bus with a fast clock must not date the feed)
+                src_t = min(int(now), max((e.vehicle.timestamp for e in VP if e.vehicle.timestamp <= now + 60), default=int(now)))
+                if src_t != last or stamp is not None:
+                    write(a.out, 'vehicle_positions', feed(pb, VP, now, src_t))
+                    write(a.out, 'trip_updates', feed(pb, TU, now, src_t))
+                    tmp = os.path.join(a.out, 'status.json.tmp')
+                    json.dump({'network': a.net, 'feed_time': int(src_t), 'written': int(now), 'vehicles': len(VP),
+                               'on_trip': sum(1 for e in VP if e.vehicle.trip.trip_id), 'on_route': sum(1 for e in VP if e.vehicle.trip.route_id),
+                               'trip_updates': len(TU)}, open(tmp, 'w'))
+                    os.replace(tmp, os.path.join(a.out, 'status.json'))
+                    print(time.strftime('%H:%M:%S'), a.net, len(VP), 'vehicles', len(TU), 'trip updates', flush=True)
+                last = stamp if stamp is not None else src_t
         except Exception as e:
+            # the last good feed stays up; a failed cycle never overwrites it
             print('cycle failed:', type(e).__name__, e, flush=True)
-        time.sleep(max(5, a.every - (time.time() - t0)))
+        time.sleep(max(2, a.every - (time.time() - t0)))
 
 
 def main():
@@ -253,7 +309,7 @@ def main():
         return (build_index_apsrtc if sys.argv[2] == 'apsrtc' else build_index)(sys.argv[3], sys.argv[4])
     ap = argparse.ArgumentParser()
     ap.add_argument('cmd'); ap.add_argument('--net', required=True); ap.add_argument('--live', required=True)
-    ap.add_argument('--data', required=True); ap.add_argument('--out', required=True); ap.add_argument('--every', type=int, default=30)
+    ap.add_argument('--data', required=True); ap.add_argument('--out', required=True); ap.add_argument('--every', type=int, default=15)
     ap.add_argument('--once', action='store_true')
     a = ap.parse_args()
     if a.once:
