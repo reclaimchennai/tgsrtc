@@ -1,0 +1,51 @@
+{
+ "official": {
+  "routes": 1220,
+  "stops": 5177
+ },
+ "collected_services": 5821,
+ "collected_in_official": 827,
+ "added_routes": 3748,
+ "added_trips": 4992,
+ "added_stops": 9634,
+ "added_stop_times": 87347,
+ "combined": {
+  "agency.txt": 1,
+  "calendar.txt": 2,
+  "feed_info.txt": 1,
+  "routes.txt": 7881,
+  "shapes.txt": 5568409,
+  "stop_times.txt": 1373631,
+  "stops.txt": 14811,
+  "trips.txt": 56977
+ },
+ "observation_rows": 110943,
+ "days": [
+  "20261111"
+ ],
+ "service_types": {
+  "Super Luxury": 385,
+  "Express": 1032,
+  "City Ordinary": 36,
+  "Deluxe": 146,
+  "Rajadhani": 151,
+  "": 9,
+  "Pallevelugu": 1683,
+  "Metro Express": 30,
+  "Pushpak": 5,
+  "Mini Pallevelugu": 10,
+  "E Express": 126,
+  "Semi Deluxe": 1,
+  "Lahari A/C Sleeper Cum Seater": 9,
+  "Lahari Non A/C Sleeper Cum Seater": 5,
+  "E-Garuda": 6,
+  "E Super Luxury": 60,
+  "E-Metro Express": 7,
+  "Lahari Sleeper A/C": 1,
+  "Metro Deluxe": 1,
+  "E Deluxe": 41,
+  "E City Ordinary": 1,
+  "Lahari A/C Seater Cum Sleeper": 2,
+  "Lahari Non A/C Seater Cum Sleeper": 1
+ }
+}
