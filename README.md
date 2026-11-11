@@ -17,6 +17,7 @@ does not carry** — mostly district and intercity buses — plus what the buses
 | [`data/trip_observations.csv.gz`](data/trip_observations.csv.gz) | per collected service-day and stop: **planned, arrived and left** (IST), route, service type, depot, bus | 110,943 rows |
 | [`data/stats/`](data/stats/) | `punctuality_by_route.csv`, `punctuality_by_depot.csv` (median and 80th-percentile delay, % on time −2…+5 min, origin excluded), `coverage.csv` (trips, services, buses, routes, depots, stops logged per day) | |
 | `data/web/` | the live map's own network files (stops, services, road segments) | |
+| [`data/realtime/`](data/realtime/) | **GTFS-Realtime** samples: VehiclePositions and TripUpdates (`.pb`, and `.json.gz` to read) — see below | |
 | `data/stats.json` | the numbers on this page | |
 | `tools/` | how this repo is built (`build_tgsrtc.py`, `charts.py`, `readme.py`); the collectors are not published | |
 
@@ -30,6 +31,22 @@ does not carry** — mostly district and intercity buses — plus what the buses
 - **De-duplicated**: one trip per service (its most complete record). The 827 collected services already in the
   official feed are not added again; what those buses did is kept in `trip_observations.csv.gz`.
 - No driver data is in this repository, and none was ever collected into it.
+
+## GTFS-Realtime
+
+Standard **GTFS-RT 2.0** Protocol Buffer feeds, built from the same live data as the map, with ids that match the
+static GTFS above: **VehiclePositions** (every live bus: position, bearing, speed, vehicle number, and its trip and
+route where known) and **TripUpdates** (arrival time and delay at each stop still ahead).
+
+| Feed | Sample in this repo | Snapshot |
+|---|---|---|
+| VehiclePositions | [`data/realtime/vehicle_positions.pb`](data/realtime/vehicle_positions.pb) (+ `.json.gz`) | 9,057 buses, 1,364 on a known GTFS trip |
+| TripUpdates | [`data/realtime/trip_updates.pb`](data/realtime/trip_updates.pb) (+ `.json.gz`) | 559 trips |
+
+How trips are matched: each bus's route number and service come from the TGSRTC tracking feed; collected district services are trip `tgc-<serviceId>`, and on official city routes the trip is the one whose timetable is nearest (within 3 min, and alone that near) to the bus's planned time at the same stop — otherwise the bus carries its `route_id` only; stop times ahead are our nowcast model's predicted arrivals. The generator is [`tools/gtfs_rt.py`](tools/gtfs_rt.py)
+(`gtfs_rt.py index tgsrtc tgsrtc-gtfs.zip rt_index.json`, then `gtfs_rt.py serve …`); the samples are one snapshot.
+Live feeds, refreshed every 30 s, are being switched on at `https://maps.reclaim.city/tgsrtc/rt/vehicle_positions.pb`
+and `…/trip_updates.pb`.
 
 ## Use it
 
